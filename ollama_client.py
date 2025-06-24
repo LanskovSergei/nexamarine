@@ -11,7 +11,21 @@ def query_ollama(prompt: str, model: str = "mistral", system: str = "Ты — а
     })
     response.raise_for_status()
 
-    # Пробуем распарсить только последнюю строку (если это потоковый вывод)
+    # Парсим последнюю строку
     lines = response.text.strip().splitlines()
-    last_line = lines[-1]
-    return json.loads(last_line)
+    return json.loads(lines[-1])
+
+def search_ollama(query: str, model: str = "deepseek-coder", system: str = "You are a research assistant. Search the internet and return useful sources."):
+    response = requests.post("http://ollama:11434/api/chat", json={
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": query}
+        ]
+    })
+    response.raise_for_status()
+
+    # Здесь тоже стрим — берём последнюю строку
+    lines = response.text.strip().splitlines()
+    return json.loads(lines[-1])
+
