@@ -1,3 +1,4 @@
+import json
 import requests
 
 def query_ollama(prompt: str, model: str = "mistral", system: str = "Ты — ассистент. Отвечай по делу."):
@@ -9,5 +10,8 @@ def query_ollama(prompt: str, model: str = "mistral", system: str = "Ты — а
         ]
     })
     response.raise_for_status()
-    return response.json()
-vvvvvvvvvvvvvvvv
+
+    # Пробуем распарсить только последнюю строку (если это потоковый вывод)
+    lines = response.text.strip().splitlines()
+    last_line = lines[-1]
+    return json.loads(last_line)
