@@ -7,7 +7,7 @@ router = APIRouter()
 class QueryRequest(BaseModel):
     prompt: str
     model: str = "mistral"
-    system: str = "Ты — ассистент. Отвечай по делу." #заглушка
+    system: str = "Ты — ассистент. Отвечай по делу."
 
 @router.post("/query")
 def query_post(data: QueryRequest):
@@ -16,4 +16,5 @@ def query_post(data: QueryRequest):
         model=data.model,
         system=data.system
     )
-    return result
+    return {"response": result}
+
