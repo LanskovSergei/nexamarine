@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel
 import requests
 
@@ -16,7 +16,7 @@ def search_post(data: SearchRequest):
         {"role": "system", "content": data.system},
         {"role": "user", "content": f"Search the web and summarize: {data.query}"}
     ]
-    
+
     try:
         response = requests.post(ollama_url, json={
             "model": data.model,
@@ -26,3 +26,4 @@ def search_post(data: SearchRequest):
         return response.json()
     except Exception as e:
         return {"error": str(e)}
+
