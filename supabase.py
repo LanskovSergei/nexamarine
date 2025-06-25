@@ -2,23 +2,28 @@ import os
 from supabase import create_client, Client
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def save_company(name: str, url: str, description: str = ""):
+def save_company_with_score(company: dict):
+    """
+    company = {
+        "name": str,
+        "url": str,
+        "description": str,
+        "ai_score": int
+    }
+    """
     try:
         data = {
-            "name": name,
-            "url": url,
-            "description": description
+            "name": company.get("name"),
+            "url": company.get("url"),
+            "description": company.get("description"),
+            "ai_score": company.get("ai_score")
         }
-
-        # Проверка на дубликаты по URL
-        existing = supabase.table("companies").select("id").eq("url", url).execute()
-        if existing.data:
-            return  # уже существует
-
-        supabase.table("companies").insert(data).execute()
+        result = supabase.table("companies").insert(data).execute()
+        return result
     except Exception as e:
-        print(f"Ошибка сохранения компании: {e}")
+        print("Error saving to Supabase:", e)
+        return None
