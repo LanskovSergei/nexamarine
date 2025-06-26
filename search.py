@@ -1,87 +1,90 @@
+# backend/app/api/search.py
+
 from fastapi import APIRouter
 from pydantic import BaseModel
-import requests
-import json
-
+from app.core.ollama_client import run_model
 from app.core.serper_client import search_serper
-from app.db.supabase import save_company_with_score, update_company_contacts
-from app.core.lpr_finder import find_lpr_with_ollama
+from app.db.supabase import save_company_with_score, save_contact_with_company
 
 router = APIRouter()
 
 class SearchRequest(BaseModel):
     query: str
     model: str = "mistral"
-    system: str = "You are a research assistant. Search the web and return structured facts."
-
 
 @router.post("/search")
-def search_post(data: SearchRequest):
-    if data.model == "serper":
-        try:
-            result = search_serper(data.query)
-            companies = result.get("organic", [])
+async def search(request: SearchRequest):
+    query = request.query
+    model = request.model
 
-            for company in companies:
-                name = company.get("title")
-                url = company.get("link")
-                description = company.get("snippet")
+    print("🔍 Search query:", query)
 
-                prompt = f"Ты аналитик. Оцени по шкале от 0 до 100, насколько компания '{name}' подходит под запрос '{data.query}'. Напиши только число."
-                ollama_url = "http://ollama:11434/api/chat"
-                messages = [
-                    {"role": "system", "content": "You are a research assistant."},
-                    {"role": "user", "content": prompt}
-                ]
+    # Step 1: Run search via Serper
+    serper_results = search_serper(query)
+    print("🔗 Serper results:", serper_results)
 
-                try:
-                    response = requests.post(ollama_url, json={
-                        "model": "mistral",
-                        "messages": messages
-                    })
-                    lines = response.text.strip().splitlines()
-                    last = json.loads(lines[-1]) if len(lines) > 1 else response.json()
-                    score = last.get("message", {}).get("content", "").strip()
-                except Exception as e:
-                    print("Error scoring:", e)
-                    score = ""
+    urls = [r["link"] for r in serper_results.get("organic", []) if "link" in r]
+    print("🔗 Extracted URLs:", urls)
 
-                # Сохраняем компанию
-                save_company_with_score({
-                    "name": name,
-                    "url": url,
-                    "description": description,
-                    "ai_score": score
-                })
+    if not urls:
+        print("⚠️ No URLs found from Serper")
+        return {"message": "No links found in search results."}
 
-                # Ищем ЛПР
-                try:
-                    lpr_data = find_lpr_with_ollama(url, name, data.query)
-                    update_company_contacts(url, lpr_data)
-                except Exception as e:
-                    print("LPR error:", e)
+    # Step 2: Format prompt for the model
+    prompt = f"""
+You are an AI assistant helping to identify B2B companies and their key decision makers.
 
-            return {"status": "ok", "companies_processed": len(companies)}
+From the following list of company URLs:
+{chr(10).join(urls)}
 
-        except Exception as e:
-            return {"error": str(e)}
+Return a list of companies with:
+- Company name
+- Website
+- Country (if available)
+- At least 1–3 key decision makers (Name, Role, Email if public)
+- Relevance score from 1 to 10 (confidence that the company is a match)
 
-    # Если модель не serper, просто обращаемся к Ollama
-    ollama_url = "http://ollama:11434/api/chat"
-    messages = [
-        {"role": "system", "content": data.system},
-        {"role": "user", "content": f"Search the web and summarize: {data.query}"}
+Respond only in JSON format as a list of objects like:
+[
+  {{
+    "name": "Company A",
+    "url": "https://a.com",
+    "country": "USA",
+    "score": 9.2,
+    "contacts": [
+      {{
+        "name": "John",
+        "role": "CEO",
+        "email": "john@a.com"
+      }}
     ]
+  }},
+  ...
+]
+    """.strip()
+
+    print("🧠 Prompt sent to model:", prompt[:500], "...\n")  # Trimmed
+
+    result = run_model(model=model, prompt=prompt)
+    print("🤖 Raw model result:", result)
 
     try:
-        response = requests.post(ollama_url, json={
-            "model": data.model,
-            "messages": messages
-        })
-        lines = response.text.strip().splitlines()
-        return response.json() if len(lines) == 1 else json.loads(lines[-1])
+        companies = eval(result)
+        print("✅ Parsed companies:", companies)
     except Exception as e:
-        return {"error": str(e)}
+        print("❌ Failed to parse model output:", str(e))
+        return {"error": "Could not parse model output."}
+
+    for company in companies:
+        print("💾 Saving company:", company)
+        save_company_with_score(company, company.get("score", 0))
+
+        for contact in company.get("contacts", []):
+            print(f"👤 Saving contact {contact.get('name')} to {company.get('url')}")
+            save_contact_with_company(contact, company.get("url"))
+
+    return {"message": "Search completed", "companies_saved": len(companies)}
+
 
 
 
