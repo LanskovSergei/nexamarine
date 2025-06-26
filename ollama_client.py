@@ -1,31 +1,41 @@
-import json
+# backend/app/core/ollama_client.py
+
 import requests
+import json
 
-def query_ollama(prompt: str, model: str = "mistral", system: str = "Ты — ассистент. Отвечай по делу."):
-    response = requests.post("http://ollama:11434/api/chat", json={
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt}
-        ]
-    })
-    response.raise_for_status()
+def run_model(model: str, prompt: str) -> str:
+    messages = [
+        {"role": "system", "content": "Ты — ассистент по поиску B2B компаний."},
+        {"role": "user", "content": prompt}
+    ]
 
-    # Парсим последнюю строку
-    lines = response.text.strip().splitlines()
-    return json.loads(lines[-1])
+    try:
+        response = requests.post("http://ollama:11434/api/chat", json={
+            "model": model,
+            "messages": messages
+        })
 
-def search_ollama(query: str, model: str = "deepseek-coder", system: str = "You are a research assistant. Search the internet and return useful sources."):
-    response = requests.post("http://ollama:11434/api/chat", json={
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": query}
-        ]
-    })
-    response.raise_for_status()
+        print("[Ollama DEBUG] Status Code:", response.status_code)
+        print("[Ollama DEBUG] Full Response Text:", response.text)
 
-    # Здесь тоже стрим — берём последнюю строку
-    lines = response.text.strip().splitlines()
-    return json.loads(lines[-1])
+        # Попробовать распарсить сразу
+        try:
+            data = response.json()
+            if "message" in data:
+                return data["message"]["content"].strip()
+        except Exception as e:
+            print("[Ollama ERROR] JSON parse failed:", e)
+
+        # Если стрим, то вытаскиваем последнее сообщение
+        chunks = response.text.strip().splitlines()
+        if not chunks:
+            return ""
+
+        last_chunk = json.loads(chunks[-1])
+        return last_chunk.get("message", {}).get("content", "").strip()
+
+    except Exception as e:
+        print("❌ Ollama error:", e)
+        return ""
+
 
